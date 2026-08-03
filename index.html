@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="碎块寻数">
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/000000/9ba095?text=1">
+    
+    <title>顺序点击 - 碎块游戏</title>
+    
+    <!-- 引入 Tailwind CSS 用于快速布局 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 D3.js 用于生成完美的 Voronoi 维诺图碎块 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            /* 提取自图片的色系，并增加商业化质感的变量 */
+            --bg-color: #0c1010;       
+            --block-color: #9ba095;    
+            --text-color: #1c1e1a;     
+            --highlight-red: #c05459;  
+            --clicked-color: #2a2f2b;  
+            --error-color: #ef4444;    
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            /* 商业级渐变背景 */
+            background: radial-gradient(circle at center, #1a2323 0%, #080a0a 100%);
+            overflow: hidden;
+            font-family: 'Nunito', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; 
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none; /* 禁用长按弹出菜单 */
+            overscroll-behavior: none;   /* 彻底禁止下拉刷新和滑动返回，防止页面意外重载！ */
+            padding-top: env(safe-area-inset-top);
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 毛玻璃 UI 面板 */
+        .glass-panel {
+            background: rgba(20, 26, 26, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(155, 160, 149, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        /* 顶部信息栏升级 */
+        #ui-layer {
+            position: absolute;
+            top: 2%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 92vmin;
+            max-width: 650px;
+            z-index: 20;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: opacity 0.3s, transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        #ui-layer.hidden {
+            opacity: 0;
+            transform: translate(-50%, -20px);
+        }
+
+        /* 核心画布容器 */
+        #canvas-wrapper {
+            position: relative;
+            width: 92vmin;
+            height: 92vmin;
+            max-width: 650px;
+            max-height: 650px;
+            border-radius: 20px;
+            overflow: hidden;
+            background-color: #000000; /* 改为纯黑，增强边界对比度 */
+            box-shadow: 0 0 0 4px rgba(42, 47, 43, 0.5), 0 25px 50px rgba(0,0,0,0.8);
+            aspect-ratio: 1 / 1;
+            transition: transform 0.1s;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 覆盖层：菜单、结算界面 */
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 10, 10, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 30;
+            transition: opacity 0.4s ease;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        #overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* 商业级按钮质感 */
+        .btn {
+            background: linear-gradient(145deg, #a6ab9f, #8c9086);
+            color: var(--text-color);
+            padding: 16px 50px;
+            font-size: 1.5rem;
+            font-weight: 900;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: auto;
+            text-transform: uppercase;
+            border: none;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.4), inset 0 2px 0 rgba(255,255,255,0.4);
+            letter-spacing: 2px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.5);
+            filter: brightness(1.1);
+        }
+
+        .btn:active {
+            transform: translateY(4px) scale(0.96);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3), inset 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        /* 屏幕震动动画 (惩罚时触发) */
+        @keyframes shake {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(-6px, 3px) rotate(-1deg); }
+            50% { transform: translate(6px, -3px) rotate(1deg); }
+            75% { transform: translate(-6px, -3px) rotate(0deg); }
+        }
+        .shake-anim {
+            animation: shake 0.3s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        /* 浮动惩罚文字 */
+        .float-text {
+            position: absolute;
+            color: var(--error-color);
+            font-weight: 900;
+            font-size: 2rem;
+            pointer-events: none;
+            z-index: 100;
+            animation: floatUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.8);
+            font-family: 'Nunito', sans-serif;
+        }
+        @keyframes floatUp {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            20% { transform: translate(-50%, -80%) scale(1.2); opacity: 1; }
+            100% { transform: translate(-50%, -200%) scale(1); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- UI 层 -->
+    <div id="ui-layer" class="hidden">
+        <div class="glass-panel flex justify-between items-center px-6 py-4 rounded-2xl w-full">
+            <div class="text-[#d1d5db] font-extrabold flex flex-col items-start leading-tight">
+                <span class="text-[0.65rem] text-[#9ba095] uppercase tracking-widest">Level</span>
+                <span id="level-display" class="text-2xl text-white">1</span>
+            </div>
+            
+            <div class="flex flex-col items-center leading-tight">
+                <span class="text-[0.65rem] text-[#9ba095] uppercase tracking-widest">Find Target</span>
+                <span class="text-4xl text-[#c05459] drop-shadow-md font-black" id="target-display" style="text-shadow: 0 0 15px rgba(192,84,89,0.4);">1</span>
+            </div>
+            
+            <div class="text-right flex flex-col items-end leading-tight">
+                <span class="text-[0.65rem] text-[#9ba095] uppercase tracking-widest">Time</span>
+                <span id="timer-display" class="text-2xl font-bold text-white w-14 text-right transition-colors">15s</span>
+            </div>
+        </div>
+        <!-- 倒计时进度条 -->
+        <div class="w-full h-3 bg-black/60 rounded-full overflow-hidden border border-white/10 shadow-inner">
+            <div id="time-bar" class="h-full bg-[#c05459] w-full origin-left will-change-transform" style="transition: width 0.1s linear, background-color 0.3s;"></div>
+        </div>
+    </div>
+
+    <!-- 游戏主画布 -->
+    <div id="canvas-wrapper">
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- 菜单与结算蒙版 -->
+        <div id="overlay">
+            <h1 id="menu-title" class="text-5xl font-extrabold mb-4 text-[#9ba095] tracking-tight" style="text-shadow: 0 10px 20px rgba(0,0,0,0.8);">碎块寻数</h1>
+            <p id="menu-subtitle" class="text-gray-400 mb-10 font-bold tracking-wide">按数字大小顺序，依次点击找出它们</p>
+            
+            <div id="stats" class="hidden mb-8 w-64 glass-panel p-5 rounded-2xl flex flex-col items-center">
+                <p id="stats-label" class="text-[#9ba095] text-sm uppercase tracking-widest mb-1">游戏表现</p>
+                <p id="stats-value" class="text-4xl text-white font-black drop-shadow-md">0</p>
+            </div>
+
+            <button class="btn" id="start-btn">PLAY</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const wrapper = document.getElementById('canvas-wrapper');
+    
+    // DOM Elements
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('start-btn');
+    const uiLayer = document.getElementById('ui-layer');
+    const levelDisplay = document.getElementById('level-display');
+    const targetDisplay = document.getElementById('target-display');
+    const timerDisplay = document.getElementById('timer-display');
+    const timeBar = document.getElementById('time-bar');
+    
+    const menuTitle = document.getElementById('menu-title');
+    const menuSubtitle = document.getElementById('menu-subtitle');
+    const statsDiv = document.getElementById('stats');
+    const statsLabel = document.getElementById('stats-label');
+    const statsValue = document.getElementById('stats-value');
+
+    // 游戏核心状态
+    let gameState = 'START'; // START, PLAYING, GAME_OVER, TRANSITION
+    let currentLevel = 1;
+    let expectedNumber = 1;
+    let totalNumbers = 9;
+    let polygons = [];
+    
+    // 时间与帧同步变量
+    let maxTime = 0;
+    let timeLeft = 0;
+    let lastFrameTime = 0;
+    let animationFrameId;
+    let levelStartTime = 0;
+    let totalTimeTaken = 0; // 累计通关用时
+
+    // 提取的图片配色
+    const COLORS = {
+        bg: '#000000', // 背景也改为纯黑
+        block: '#9ba095',
+        text: '#1c1e1a',
+        target1: '#c05459', 
+        clicked: '#2a2f2b', 
+        error: '#ef4444'
+    };
+
+    let audioCtx;
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function playSound(type) {
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'click') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1200, now);
+            osc.frequency.exponentialRampToValueAtTime(300, now + 0.08);
+            gain.gain.setValueAtTime(0.5, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+            osc.start(now);
+            osc.stop(now + 0.08);
+        } else if (type === 'error') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(60, now + 0.3);
+            gain.gain.setValueAtTime(0.4, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } else if (type === 'levelUp') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.linearRampToValueAtTime(800, now + 0.15);
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+            gain.gain.linearRampToValueAtTime(0, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        }
+    }
+
+    let width, height;
+    function resizeCanvas() {
+        const rect = wrapper.getBoundingClientRect();
+        const newWidth = rect.width;
+        const newHeight = rect.height;
+        
+        // 忽略没有实际尺寸变化的误触触发
+        if (width === newWidth && height === newHeight) return;
+        
+        const oldWidth = width;
+        const oldHeight = height;
+        
+        width = newWidth;
+        height = newHeight;
+        
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+        
+        // 修复：缩放屏幕或手机端滚动导致重置关卡的 Bug
+        // 不再重新生成关卡，而是直接等比缩放现有的多边形坐标
+        if ((gameState === 'PLAYING' || gameState === 'TRANSITION') && oldWidth && oldHeight) {
+            const scaleX = width / oldWidth;
+            const scaleY = height / oldHeight;
+            polygons.forEach(p => {
+                p.center.x *= scaleX;
+                p.center.y *= scaleY;
+                p.points.forEach(pt => {
+                    pt.x *= scaleX;
+                    pt.y *= scaleY;
+                });
+            });
+        }
+    }
+    
+    window.addEventListener('resize', () => {
+        clearTimeout(window.resizeTimer);
+        window.resizeTimer = setTimeout(resizeCanvas, 200);
+    });
+
+    function generatePolygons(count) {
+        const margin = 12;
+        let points = Array.from({length: count}, () => [
+            margin + Math.random() * (width - margin * 2),
+            margin + Math.random() * (height - margin * 2)
+        ]);
+
+        // Lloyd 劳埃德松弛算法，使碎块分布均匀
+        const relaxIterations = 4;
+        let delaunay, voronoi;
+        
+        for (let iter = 0; iter < relaxIterations; iter++) {
+            delaunay = d3.Delaunay.from(points);
+            voronoi = delaunay.voronoi([margin, margin, width-margin, height-margin]);
+            
+            for (let i = 0; i < count; i++) {
+                const polygon = voronoi.cellPolygon(i);
+                if (polygon) {
+                    const centroid = d3.polygonCentroid(polygon);
+                    points[i] = centroid;
+                }
+            }
+        }
+
+        delaunay = d3.Delaunay.from(points);
+        voronoi = delaunay.voronoi([0, 0, width, height]);
+        
+        let numbers = Array.from({length: count}, (_, i) => i + 1);
+        numbers.sort(() => Math.random() - 0.5);
+
+        polygons = [];
+        
+        for (let i = 0; i < count; i++) {
+            let rawPolygon = voronoi.cellPolygon(i);
+            if (!rawPolygon) continue;
+            rawPolygon.pop(); 
+            
+            const centroid = d3.polygonCentroid(rawPolygon);
+            const centerPt = { x: centroid[0], y: centroid[1] };
+            
+            // 计算向内收缩的间隙 (数值从3.5调大到6，让边界更明显)
+            const gapSize = 6; 
+            const shrunkenPoints = rawPolygon.map(p => {
+                const pt = {x: p[0], y: p[1]};
+                const dx = pt.x - centerPt.x;
+                const dy = pt.y - centerPt.y;
+                const len = Math.hypot(dx, dy);
+                if (len < gapSize) return centerPt; 
+                return {
+                    x: pt.x - (dx / len) * gapSize,
+                    y: pt.y - (dy / len) * gapSize
+                };
+            });
+
+            // 计算该多边形距中心的距离，用于错落有致的进场动画
+            const distFromCenter = Math.hypot(centerPt.x - width/2, centerPt.y - height/2);
+
+            polygons.push({
+                id: i,
+                number: numbers[i],
+                points: shrunkenPoints,
+                center: centerPt,
+                color: COLORS.block,
+                state: 'normal', 
+                scale: 0,       // 动画初始缩放为0
+                alpha: 0,       // 动画初始透明度为0
+                shakeOffset: 0, 
+                spawnDelay: (distFromCenter / (width/2)) * 300 + Math.random() * 100 // 进场延迟
+            });
+        }
+    }
+
+    function isPointInPolygon(pt, vs) {
+        let x = pt.x, y = pt.y;
+        let inside = false;
+        for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+            let xi = vs[i].x, yi = vs[i].y;
+            let xj = vs[j].x, yj = vs[j].y;
+            let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    function draw() {
+        ctx.fillStyle = COLORS.bg;
+        ctx.fillRect(0, 0, width, height);
+
+        if (gameState !== 'PLAYING' && gameState !== 'TRANSITION') return;
+
+        const avgArea = (width * height) / totalNumbers;
+        const fontSize = Math.max(16, Math.sqrt(avgArea) * 0.42);
+        ctx.font = `900 ${fontSize}px 'Nunito', sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const now = Date.now();
+        const timeSinceStart = now - levelStartTime;
+
+        polygons.forEach(p => {
+            ctx.save();
+            
+            // 弹性入场与交互动画演算
+            if (gameState === 'PLAYING') {
+                if (timeSinceStart > p.spawnDelay) {
+                    if (p.state === 'clicked') {
+                        p.color = COLORS.clicked;
+                        p.scale += (0.85 - p.scale) * 0.2;
+                        p.alpha += (0.4 - p.alpha) * 0.2;
+                    } else if (p.state === 'error') {
+                        p.color = COLORS.error;
+                        p.shakeOffset = Math.sin(now / 15) * 5; 
+                        if (now - p.errorStartTime > 300) { 
+                            p.state = 'normal';
+                            p.shakeOffset = 0;
+                        }
+                    } else {
+                        p.color = COLORS.block;
+                        // 弹性伸缩方程
+                        p.scale += (1 - p.scale) * 0.15;
+                        p.alpha += (1 - p.alpha) * 0.15;
+                        p.shakeOffset = 0;
+                    }
+                } else {
+                    p.scale = 0;
+                    p.alpha = 0;
+                }
+            }
+
+            if (p.alpha > 0.01) {
+                ctx.globalAlpha = p.alpha;
+                ctx.translate(p.center.x + p.shakeOffset, p.center.y);
+                ctx.scale(p.scale, p.scale);
+                ctx.translate(-p.center.x, -p.center.y);
+
+                ctx.beginPath();
+                ctx.moveTo(p.points[0].x, p.points[0].y);
+                for (let i = 1; i < p.points.length; i++) {
+                    ctx.lineTo(p.points[i].x, p.points[i].y);
+                }
+                ctx.closePath();
+
+                ctx.fillStyle = p.color;
+                ctx.fill();
+                
+                ctx.lineJoin = "round";
+                ctx.lineWidth = 8; // 增加边缘厚度以配合间隙，实现圆角
+                ctx.strokeStyle = p.color;
+                ctx.stroke();
+
+                if (p.state !== 'clicked') {
+                    ctx.globalAlpha = 1;
+                    if (p.number === expectedNumber && p.number === 1) {
+                        ctx.fillStyle = COLORS.target1;
+                    } else {
+                        ctx.fillStyle = COLORS.text;
+                    }
+                    ctx.fillText(p.number, p.center.x, p.center.y);
+                }
+            }
+            ctx.restore();
+        });
+
+        if (gameState === 'TRANSITION') {
+            ctx.fillStyle = 'rgba(12, 16, 16, 0.7)';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#fff';
+            ctx.font = `900 ${width*0.12}px 'Nunito', sans-serif`;
+            ctx.fillText(`LEVEL ${currentLevel}`, width/2, height/2);
+        }
+    }
+
+    function generateLevel(resetTime = true) {
+        // 难度与时间计算
+        const bases = [9, 16, 25, 36, 45]; // 方块数量
+        const times = [12, 18, 26, 35, 45]; // 给定秒数
+        
+        const levelIdx = Math.min(currentLevel - 1, bases.length - 1);
+        totalNumbers = bases[levelIdx];
+        
+        if (resetTime) {
+            maxTime = times[levelIdx];
+            timeLeft = maxTime;
+            lastFrameTime = 0; // 重置增量计时器
+        }
+        
+        expectedNumber = 1;
+        generatePolygons(totalNumbers);
+        
+        uiLayer.classList.remove('hidden');
+        levelDisplay.innerText = currentLevel;
+        updateTargetUI();
+        
+        gameState = 'TRANSITION';
+        playSound('levelUp');
+        
+        setTimeout(() => {
+            gameState = 'PLAYING';
+            levelStartTime = Date.now();
+        }, 1000);
+    }
+
+    function updateTargetUI() {
+        targetDisplay.innerText = expectedNumber;
+        targetDisplay.style.transform = 'scale(1.4)';
+        setTimeout(() => {
+            targetDisplay.style.transform = 'scale(1)';
+            targetDisplay.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+        }, 50);
+    }
+
+    function updateTimerUI() {
+        timerDisplay.innerText = `${Math.ceil(timeLeft)}s`;
+        const percent = Math.max(0, (timeLeft / maxTime) * 100);
+        timeBar.style.width = `${percent}%`;
+        
+        if (percent < 25) {
+            timeBar.classList.replace('bg-[#c05459]', 'bg-red-500');
+            timerDisplay.classList.add('text-red-500');
+        } else {
+            timeBar.classList.replace('bg-red-500', 'bg-[#c05459]');
+            timerDisplay.classList.remove('text-red-500');
+        }
+    }
+
+    // 屏幕飘字特效 (时间惩罚)
+    function showFloatText(text, x, y) {
+        const el = document.createElement('div');
+        el.className = 'float-text';
+        el.innerText = text;
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 800);
+    }
+
+    function handleInteraction(e) {
+        if (gameState !== 'PLAYING') return;
+        initAudio(); 
+
+        const rect = canvas.getBoundingClientRect();
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if (e.type === 'touchstart') {
+            // 核心修复1：使用 changedTouches 替代 touches。避免边缘误触导致所有点击坐标全部判定错误！
+            clientX = e.changedTouches[0].clientX;
+            clientY = e.changedTouches[0].clientY;
+        }
+
+        const logicX = clientX - rect.left;
+        const logicY = clientY - rect.top;
+        const pt = { x: logicX, y: logicY };
+
+        for (let i = polygons.length - 1; i >= 0; i--) {
+            const p = polygons[i];
+            if (p.state !== 'clicked' && p.scale > 0.5 && isPointInPolygon(pt, p.points)) {
+                if (p.number === expectedNumber) {
+                    p.state = 'clicked';
+                    expectedNumber++;
+                    playSound('click');
+                    
+                    if (expectedNumber > totalNumbers) {
+                        totalTimeTaken += (maxTime - timeLeft);
+                        setTimeout(() => {
+                            currentLevel++;
+                            if (currentLevel > 5) {
+                                gameComplete(true);
+                            } else {
+                                generateLevel();
+                            }
+                        }, 400);
+                    } else {
+                        updateTargetUI();
+                    }
+                } else {
+                    if (p.state !== 'error') {
+                        p.state = 'error';
+                        p.errorStartTime = Date.now();
+                        playSound('error');
+                        
+                        // 商业级负反馈：扣2秒，震屏，飘字
+                        timeLeft -= 2;
+                        wrapper.classList.remove('shake-anim');
+                        void wrapper.offsetWidth; // 触发重绘以重启倒计时动画
+                        wrapper.classList.add('shake-anim');
+                        showFloatText("-2s", clientX, clientY);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    function gameComplete(isWin) {
+        gameState = 'GAME_OVER';
+        
+        let btnText = "";
+        if (isWin) {
+            menuTitle.innerText = "MISSION CLEAR!";
+            menuTitle.style.color = "#a6ab9f";
+            menuSubtitle.innerText = "惊人的眼力与反应速度！";
+            statsLabel.innerText = "总计耗时";
+            statsValue.innerText = totalTimeTaken.toFixed(1) + "s";
+            statsValue.style.color = "#c05459";
+            btnText = "PLAY AGAIN";
+            playSound('levelUp');
+        } else {
+            menuTitle.innerText = "TIME'S UP!";
+            menuTitle.style.color = "#ef4444";
+            menuSubtitle.innerText = "时间耗尽，注意力涣散了？";
+            statsLabel.innerText = "止步关卡";
+            statsValue.innerText = "Level " + currentLevel;
+            statsValue.style.color = "#9ba095";
+            btnText = "TRY AGAIN";
+            playSound('error');
+        }
+        
+        statsDiv.classList.remove('hidden');
+        overlay.classList.remove('hidden');
+        uiLayer.classList.add('hidden');
+
+        // 防误触机制升级：锁定并显示倒计时，彻底杜绝瞬间连点造成的意外重置
+        startBtn.style.display = 'block';
+        startBtn.style.pointerEvents = 'none';
+        startBtn.style.opacity = '0.4';
+        startBtn.style.filter = 'grayscale(100%)';
+        startBtn.innerText = btnText + " (1s)";
+        
+        setTimeout(() => {
+            startBtn.style.pointerEvents = 'auto';
+            startBtn.style.opacity = '1';
+            startBtn.style.filter = 'none';
+            startBtn.innerText = btnText;
+        }, 1000);
+    }
+
+    function startGame() {
+        initAudio();
+        currentLevel = 1;
+        totalTimeTaken = 0;
+        overlay.classList.add('hidden');
+        statsDiv.classList.add('hidden');
+        startBtn.style.display = 'none'; // 游戏进行中彻底隐藏按钮，杜绝幽灵点击
+        
+        resizeCanvas();
+        generateLevel(true);
+    }
+
+    canvas.addEventListener('mousedown', handleInteraction);
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault(); 
+        handleInteraction(e);
+    }, { passive: false });
+
+    startBtn.addEventListener('click', startGame);
+
+    // 核心修复2：全局拦截，彻底封杀 iOS/Android 侧滑返回、下拉刷新或双指缩放导致的页面意外重载
+    document.addEventListener('touchmove', function(e) {
+        // 只有在非可滚动区域才阻止默认事件，防止整个页面卡死，但对于这个全屏游戏适用
+        e.preventDefault();
+    }, { passive: false });
+
+    function gameLoop(timestamp) {
+        if (!lastFrameTime) lastFrameTime = timestamp;
+        let delta = timestamp - lastFrameTime;
+        lastFrameTime = timestamp;
+
+        // 核心修复3：封顶时间增量。防止切后台、拉下通知栏等操作导致的时间瞬间流逝而暴毙
+        if (delta > 100) delta = 100;
+
+        // 核心修复4：加入 expectedNumber <= totalNumbers。在通关的 400ms 过场动画期间彻底冻结时间，防止胜利被失败覆盖
+        if (gameState === 'PLAYING' && expectedNumber <= totalNumbers) {
+            timeLeft -= delta / 1000;
+            if (timeLeft <= 0) {
+                timeLeft = 0;
+                gameComplete(false); // 超时失败
+            }
+            updateTimerUI();
+        }
+
+        draw();
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
+
+    window.onload = () => {
+        resizeCanvas();
+        gameLoop(0);
+    };
+</script>
+</body>
+</html>
