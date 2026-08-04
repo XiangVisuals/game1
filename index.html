@@ -58,30 +58,27 @@
 
         #dynamic-island-ui {
             position: absolute;
-            top: 0;
+            /* 智能跟随系统安全区，形成真正的悬浮胶囊 */
+            top: max(env(safe-area-inset-top), 15px);
             left: 50%;
             transform: translateX(-50%);
             background: #000000;
-            /* 智能吞并物理灵动岛/刘海的安全区 */
-            padding-top: max(env(safe-area-inset-top, 45px), 15px);
-            padding-bottom: 12px;
-            padding-left: 24px;
-            padding-right: 24px;
-            border-bottom-left-radius: 40px; 
-            border-bottom-right-radius: 40px;
+            border-radius: 999px; /* 完美的圆润胶囊形状 */
             z-index: 50;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            width: 90%;
-            max-width: 400px;
-            box-shadow: 0 15px 40px rgba(0,0,0,0.7);
-            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: auto;
+            min-width: 280px;
+            padding: 10px 24px;
+            /* 增加高光内发光，模拟真机玻璃质感 */
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.2);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
             pointer-events: none;
         }
 
         #dynamic-island-ui.hidden {
-            transform: translate(-50%, -100%);
+            transform: translate(-50%, -100%) scale(0.8);
+            opacity: 0;
         }
 
         .island-content {
@@ -89,28 +86,78 @@
             justify-content: space-between;
             align-items: center;
             width: 100%;
+            position: relative;
         }
 
-        /* 灵动岛底部材质呼吸灯 */
-        .island-glow {
+        .island-side {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .island-label {
+            font-size: 0.55rem;
+            color: #888;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+        }
+
+        .island-value {
+            font-size: 1.2rem;
+            font-weight: 900;
+            color: #fff;
+            line-height: 1.1;
+        }
+
+        .island-center {
             position: absolute;
-            bottom: -2px;
-            left: 20%;
-            right: 20%;
-            height: 3px;
-            background: #fff;
-            border-radius: 10px;
-            opacity: 0.8;
-            transition: all 1s ease;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+        }
+
+        /* 目标数字发光环 */
+        .target-ring {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            transition: transform 0.1s ease;
+        }
+
+        #target-display {
+            font-size: 1.4rem;
+            font-weight: 900;
+            color: #fff;
+            line-height: 1;
+        }
+
+        /* 灵动岛呼吸膨胀动画 */
+        .island-pop {
+            animation: islandPop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes islandPop {
+            0% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.06); }
+            100% { transform: translateX(-50%) scale(1); }
         }
 
         /* 倒计时进度条 */
         #time-bar-container {
             width: 100%;
-            height: 4px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-            margin-top: 8px;
+            height: 3px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 3px;
+            margin-top: 10px;
             overflow: hidden;
             position: relative;
         }
@@ -191,38 +238,33 @@
 <div id="bg-layer"></div>
 
 <div id="game-container">
-    <!-- 全新：灵动岛融合层 -->
+    <!-- 全新：原生级灵动岛融合悬浮胶囊 -->
     <div id="dynamic-island-ui" class="hidden">
         <div class="island-content">
-            <div class="flex flex-col items-center min-w-[60px]">
-                <span class="text-[0.6rem] text-gray-400 font-bold tracking-widest">LEVEL</span>
-                <span id="level-display" class="text-2xl font-black text-white leading-none mt-1">1</span>
+            <div class="island-side">
+                <span class="island-label">LEVEL</span>
+                <span id="level-display" class="island-value">1</span>
             </div>
             
-            <div class="flex flex-col items-center relative z-10 px-4">
-                <span id="theme-name-display" class="text-[0.6rem] text-gray-400 tracking-widest uppercase mb-1 transition-colors font-black">晶钻琉璃</span>
-                <div class="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center border border-white/20 shadow-[inset_0_4px_10px_rgba(255,255,255,0.1)] backdrop-blur-md">
-                    <!-- 目标数字显示 (现在仅在 UI 内显示，画面中不再红字作弊提示) -->
-                    <span class="text-4xl font-black text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)]" id="target-display">1</span>
+            <div class="island-center">
+                <div class="target-ring" id="target-ring">
+                    <span id="target-display">1</span>
                 </div>
             </div>
             
-            <div class="flex flex-col items-center min-w-[60px]">
-                <span class="text-[0.6rem] text-gray-400 font-bold tracking-widest">TIME</span>
-                <span id="timer-display" class="text-2xl font-black text-white transition-colors leading-none mt-1">15s</span>
+            <div class="island-side" style="align-items: flex-end;">
+                <span class="island-label">TIME</span>
+                <span id="timer-display" class="island-value">15s</span>
             </div>
         </div>
         
-        <div class="island-glow" id="island-glow"></div>
-        
-        <!-- 连击提示区 -->
-        <div class="w-full flex justify-center h-5 relative mt-3">
-            <span id="combo-display" class="hidden absolute text-lg font-black italic tracking-wider transition-all duration-300"></span>
-        </div>
-        
-        <!-- 倒计时进度条 -->
         <div id="time-bar-container">
             <div id="time-bar"></div>
+        </div>
+        
+        <!-- 连击提示移至胶囊外部下方，保持胶囊几何美感 -->
+        <div class="absolute -bottom-8 w-full flex justify-center pointer-events-none">
+            <span id="combo-display" class="hidden text-base font-black italic tracking-wider drop-shadow-lg transition-all duration-300"></span>
         </div>
     </div>
 
@@ -341,12 +383,25 @@
         rootStyle.setProperty('--bg-mid', theme.bgMid);
         rootStyle.setProperty('--bg-end', theme.bgEnd);
         
-        // 联动灵动岛氛围灯光
         const mainColor = theme.colors[0].s;
-        themeNameDisplay.innerText = theme.name;
-        themeNameDisplay.style.color = mainColor;
-        islandGlow.style.background = mainColor;
-        islandGlow.style.boxShadow = `0 0 20px 4px ${mainColor}`;
+        
+        // 兼容遗留的文字DOM，防止报错
+        if(themeNameDisplay) {
+            themeNameDisplay.innerText = theme.name;
+            themeNameDisplay.style.color = mainColor;
+        }
+        if(islandGlow) {
+            islandGlow.style.background = mainColor;
+            islandGlow.style.boxShadow = `0 0 20px 4px ${mainColor}`;
+        }
+        
+        // 更新胶囊目标环的高级氛围色
+        const targetRing = document.getElementById('target-ring');
+        if (targetRing) {
+            targetRing.style.borderColor = mainColor;
+            targetRing.style.boxShadow = `0 0 15px ${mainColor}`;
+        }
+        
         timeBar.style.backgroundColor = mainColor;
     }
 
@@ -542,8 +597,17 @@
 
     function updateTargetUI() {
         targetDisplay.innerText = expectedNumber;
-        targetDisplay.style.transform = 'scale(1.4)';
-        setTimeout(() => targetDisplay.style.transform = 'scale(1)', 150);
+        
+        // 触发整个灵动岛的“膨胀-回弹”物理震颤效果
+        uiLayer.classList.remove('island-pop');
+        void uiLayer.offsetWidth; // 触发重绘
+        uiLayer.classList.add('island-pop');
+        
+        const targetRing = document.getElementById('target-ring');
+        if (targetRing) {
+            targetRing.style.transform = 'scale(1.2)';
+            setTimeout(() => targetRing.style.transform = 'scale(1)', 150);
+        }
     }
 
     function updateTimerUI() {
